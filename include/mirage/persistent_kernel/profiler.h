@@ -142,6 +142,23 @@ struct ProfilerEntry {
   profiler_write_thread_predicate = write_thread_predicate;                    \
   TB_PROFILER_SET_END(profiler_buffer)
 
+// Like PROFILER_INIT, but the caller picks the slot (track) and the slot count
+// instead of using blockIdx and gridDim. Lets two kernels that run at the same
+// time (e.g. a worker and a scheduler kernel) share one buffer without writing
+// over each other's entries; only the caller with write_header writes [0].
+#define PROFILER_INIT_SLOT(                                                    \
+    profiler_buffer, slot, num_slots, write_header, write_thread_predicate)    \
+  if ((write_header) && tb::get_thread_idx() == 0) {                           \
+    entry.nblocks = (num_slots);                                               \
+    entry.ngroups = 1;                                                         \
+    profiler_buffer[0] = entry.raw;                                            \
+  }                                                                            \
+  profiler_write_ptr = profiler_buffer + 1 + (slot);                           \
+  profiler_write_stride = (num_slots);                                         \
+  profiler_entry_tag_base = tb::encode_tag((slot), 0, 0);                      \
+  profiler_write_thread_predicate = write_thread_predicate;                    \
+  TB_PROFILER_SET_END(profiler_buffer)
+
 #define PROFILER_EVENT_START(event, event_no)                                  \
   if (profiler_write_thread_predicate && TB_PROFILER_HAS_ROOM) {               \
     entry.tag =                                                                \

@@ -962,6 +962,16 @@ __device__ __forceinline__ void persistent_checker(RuntimeConfig config) {
   // assert(blockDim.x >= 128);
 }
 
+#if defined(MPK_ENABLE_PROFILING) && defined(MPK_PROFILER_SCHED_SLOTS)
+// Profiler tracks: workers first, then scheduler blocks.
+__device__ __forceinline__ int
+    mpk_profiler_num_slots(RuntimeConfig const &config) {
+  return config.num_workers +
+         (config.num_local_schedulers + config.num_remote_schedulers) /
+             SCHEDULERS_PER_BLOCK;
+}
+#endif
+
 __device__ __forceinline__ void execute_worker(RuntimeConfig config) {
   // Make sure overall smem usage here do not exceed 3KB
   // last_task_pos: 2 * 8 = 16 B
@@ -983,10 +993,20 @@ __device__ __forceinline__ void execute_worker(RuntimeConfig config) {
 
 #ifdef MPK_ENABLE_PROFILING
   PROFILER_CLOSURE_PARAMS_DECL;
+#ifdef MPK_PROFILER_SCHED_SLOTS
+  // One track per worker block, then one per scheduler block (see
+  // execute_scheduler), in both the split and the single-kernel launch.
+  PROFILER_INIT_SLOT(static_cast<uint64_t *>(config.profiler_buffer),
+                     blockIdx.x,
+                     mpk_profiler_num_slots(config),
+                     blockIdx.x == 0,
+                     (threadIdx.x % WORKER_NUM_THREADS == 0));
+#else
   PROFILER_INIT(static_cast<uint64_t *>(config.profiler_buffer),
                 0,
                 1,
                 (threadIdx.x % WORKER_NUM_THREADS == 0));
+#endif
 
 #endif
   int const worker_id = blockIdx.x;
@@ -1288,8 +1308,20 @@ __device__ __forceinline__ void execute_scheduler(RuntimeConfig config,
     // Up to 4 scheduler warps share one block but the profiler has one
     // slot per block (num_groups=1).  Only warp 0 writes so events from
     // different warps don't interleave.
+#ifdef MPK_PROFILER_SCHED_SLOTS
+    // In the split launch the scheduler kernel's blockIdx restarts at 0, so
+    // PROFILER_INIT would write the header and the tracks of workers 0..N.
+    PROFILER_INIT_SLOT(static_cast<uint64_t *>(config.profiler_buffer),
+                       config.split_worker_scheduler
+                           ? config.num_workers + blockIdx.x
+                           : blockIdx.x,
+                       mpk_profiler_num_slots(config),
+                       false,
+                       (warp_id == 0));
+#else
     PROFILER_INIT(
         static_cast<uint64_t *>(config.profiler_buffer), 0, 1, (warp_id == 0));
+#endif
     uint32_t sched_profiling_cnt = 0;
 #endif
 

@@ -109,9 +109,23 @@ struct ProfilerEntry {
   uint64_t *profiler_write_ptr;                                                \
   uint32_t profiler_write_stride;                                              \
   uint32_t profiler_entry_tag_base;                                            \
-  bool profiler_write_thread_predicate;
+  bool profiler_write_thread_predicate;                                        \
+  TB_PROFILER_END_DECL
 
 // #define PROFILER_PARAMS_DECL uint64_t *profiler_buffer;
+
+// Optional bounds check: with -DTB_PROFILER_MAX_ENTRIES=N, entries past the
+// first N slots of the buffer are dropped instead of written out of bounds.
+#ifdef TB_PROFILER_MAX_ENTRIES
+#define TB_PROFILER_END_DECL uint64_t *profiler_write_end;
+#define TB_PROFILER_SET_END(profiler_buffer)                                   \
+  profiler_write_end = (profiler_buffer) + (TB_PROFILER_MAX_ENTRIES);
+#define TB_PROFILER_HAS_ROOM (profiler_write_ptr < profiler_write_end)
+#else
+#define TB_PROFILER_END_DECL
+#define TB_PROFILER_SET_END(profiler_buffer)
+#define TB_PROFILER_HAS_ROOM true
+#endif
 
 #define PROFILER_INIT(                                                         \
     profiler_buffer, group_idx, num_groups, write_thread_predicate)            \
@@ -125,10 +139,11 @@ struct ProfilerEntry {
   profiler_write_stride = tb::get_num_blocks() * num_groups;                   \
   profiler_entry_tag_base =                                                    \
       tb::encode_tag(tb::get_block_idx() * num_groups + group_idx, 0, 0);      \
-  profiler_write_thread_predicate = write_thread_predicate;
+  profiler_write_thread_predicate = write_thread_predicate;                    \
+  TB_PROFILER_SET_END(profiler_buffer)
 
 #define PROFILER_EVENT_START(event, event_no)                                  \
-  if (profiler_write_thread_predicate) {                                       \
+  if (profiler_write_thread_predicate && TB_PROFILER_HAS_ROOM) {               \
     entry.tag =                                                                \
         tb::make_event_tag_start(profiler_entry_tag_base, event, event_no);    \
     entry.delta_time = tb::get_timestamp();                                    \
@@ -139,7 +154,7 @@ struct ProfilerEntry {
 
 #define PROFILER_EVENT_END(event, event_no)                                    \
   __threadfence_block();                                                       \
-  if (profiler_write_thread_predicate) {                                       \
+  if (profiler_write_thread_predicate && TB_PROFILER_HAS_ROOM) {               \
     entry.tag =                                                                \
         tb::make_event_tag_end(profiler_entry_tag_base, event, event_no);      \
     entry.delta_time = tb::get_timestamp();                                    \
@@ -149,7 +164,7 @@ struct ProfilerEntry {
 
 #define PROFILER_EVENT_INSTANT(event, event_no)                                \
   __threadfence_block();                                                       \
-  if (profiler_write_thread_predicate) {                                       \
+  if (profiler_write_thread_predicate && TB_PROFILER_HAS_ROOM) {               \
     entry.tag =                                                                \
         tb::make_event_tag_instant(profiler_entry_tag_base, event, event_no);  \
     entry.delta_time = tb::get_timestamp();                                    \

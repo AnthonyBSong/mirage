@@ -329,7 +329,11 @@ __device__ __forceinline__ bool
       config.step[request_id] = step + num_tokens;
       int step_advance = num_tokens;
 #endif
-#if defined(MPK_ENABLE_PROFILING) || defined(MPK_TEST_MODE)
+// Profiling builds end every request after its first step unless
+// MPK_PROFILE_ALL_STEPS is defined (size the profiler buffer for the whole run
+// and set TB_PROFILER_MAX_ENTRIES so a full buffer drops entries).
+#if (defined(MPK_ENABLE_PROFILING) && !defined(MPK_PROFILE_ALL_STEPS)) ||        \
+    defined(MPK_TEST_MODE)
       if (true)
 #else
       if ((step + step_advance + 1 >= config.max_seq_length) ||
@@ -550,7 +554,7 @@ __device__ __forceinline__ bool
 #endif
   config.step[0] = step + config.new_token_nums[0];
 
-#ifdef MPK_ENABLE_PROFILING
+#if defined(MPK_ENABLE_PROFILING) && !defined(MPK_PROFILE_ALL_STEPS)
   return false;
 #else
   if ((step + 2 >= config.max_seq_length) ||
@@ -634,7 +638,7 @@ __device__ __forceinline__ bool
     // when it observes the updated step.
     st_release_sys_i32(&config.pinned_step[row], (int32_t)(step + num_tokens));
 
-#ifdef MPK_ENABLE_PROFILING
+#if defined(MPK_ENABLE_PROFILING) && !defined(MPK_PROFILE_ALL_STEPS)
     bool done = true;
 #else
     bool done = (step + num_tokens + 1 >= config.max_seq_length) ||

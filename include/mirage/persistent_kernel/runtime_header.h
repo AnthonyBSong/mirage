@@ -443,6 +443,11 @@ struct RuntimeConfig {
   // single-threaded from prepare_next_batch.
   int *kv_event_log;
 #endif
+#ifdef MPK_REQUEST_MAX_LENGTHS
+  // Offline mode: per-request maximum length (prompt + output tokens), one
+  // int per request; a request also stops when it reaches max_seq_length.
+  int *request_max_lengths;
+#endif
 #if defined(MODE_OFFLINE) || defined(MODE_ONLINE) ||                           \
     defined(MODE_ONLINE_NOTOKEN) || defined(MODE_ONLINE_TEST) ||               \
     defined(MODE_ONLINE_PINNED)

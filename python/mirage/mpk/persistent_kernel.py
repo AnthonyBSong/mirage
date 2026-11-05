@@ -339,6 +339,9 @@ def get_compile_command(
     flags = flags + [f"-DMPK_MAX_TOKENS_PER_REQUEST={mpk.max_tokens_per_request}"]
     flags = flags + [f"-DMPK_MAX_NUM_PAGES={mpk.max_num_pages}"]
     flags = flags + [f"-DMPK_NUM_KV_GROUPS={len(mpk.kv_groups)}"]
+    if "request_max_lengths" in mpk.meta_tensors:
+        assert mpk.mode == "offline", "request_max_lengths is supported in offline mode only"
+        flags = flags + ["-DMPK_REQUEST_MAX_LENGTHS"]
     if "kv_event_log" in mpk.meta_tensors:
         flags = flags + [
             f"-DMPK_KV_EVENT_LOG={mpk.meta_tensors['kv_event_log'].numel()}"]
@@ -569,6 +572,9 @@ class PersistentKernel:
         assert self.meta_tensors["output_tokens"].dtype == torch.int64, f"output_tokens.dtype: {self.meta_tensors['output_tokens'].dtype}"
         assert self.meta_tensors["num_new_tokens"].dtype == torch.int32, f"num_new_tokens.dtype: {self.meta_tensors['num_new_tokens'].dtype}"
         assert self.meta_tensors["prompt_lengths"].dtype == torch.int32, f"prompt_lengths.dtype: {self.meta_tensors['prompt_lengths'].dtype}"
+        if "request_max_lengths" in self.meta_tensors:
+            assert self.meta_tensors["request_max_lengths"].dtype == torch.int32
+            assert self.meta_tensors["request_max_lengths"].numel() == self.meta_tensors["tokens"].shape[0]
         assert qo_indptr_buffer.dtype == torch.int32, f"qo_indptr_buffer.dtype: {qo_indptr_buffer.dtype}"
         assert paged_kv_indptr_buffer.dtype == torch.int32, f"paged_kv_indptr_buffer_0.dtype: {paged_kv_indptr_buffer.dtype}"
         assert paged_kv_indices_buffer.dtype == torch.int32, f"paged_kv_indices_buffer_0.dtype: {paged_kv_indices_buffer.dtype}"
@@ -3427,6 +3433,8 @@ class PersistentKernel:
         if self.mode=="online_pinned":
             for key in pinned_extra_order:
                 meta_tensors_ptr.append(self.meta_tensors[key].data_ptr())
+        if "request_max_lengths" in self.meta_tensors:  # before kv_event_log
+            meta_tensors_ptr.append(self.meta_tensors["request_max_lengths"].data_ptr())
         if "kv_event_log" in self.meta_tensors:
             meta_tensors_ptr.append(self.meta_tensors["kv_event_log"].data_ptr())
         profiler_buffer_ptr = (
@@ -3543,6 +3551,8 @@ class PersistentKernel:
             meta_tensors.append(self.meta_tensors["pinned_step"])
             meta_tensors.append(self.meta_tensors["pinned_inbox_tokens"])
             meta_tensors.append(self.meta_tensors["pinned_rid_at_row"])
+        if "request_max_lengths" in self.meta_tensors:  # before kv_event_log
+            meta_tensors.append(self.meta_tensors["request_max_lengths"])
         if "kv_event_log" in self.meta_tensors:
             meta_tensors.append(self.meta_tensors["kv_event_log"])
         meta_tensors_ptr = [tensor.data_ptr() for tensor in meta_tensors]

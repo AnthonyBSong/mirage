@@ -337,6 +337,11 @@ __device__ __forceinline__ bool
       if (true)
 #else
       if ((step + step_advance + 1 >= config.max_seq_length) ||
+#ifdef MPK_REQUEST_MAX_LENGTHS
+          // Per-request cap: prompt plus output tokens, at most
+          // max_seq_length (e.g. to replay a trace's response lengths).
+          (step + step_advance + 1 >= config.request_max_lengths[request_id]) ||
+#endif
           ((config.tokens[request_id * MPK_MAX_SEQ_LENGTH + step +
                           step_advance] == config.eos_token_id) &&
            (step + step_advance >= prompt_len)))
@@ -1694,6 +1699,9 @@ extern "C" void
 #ifdef MPK_KV_EVENT_LOG
   expected_num_meta += 1;
 #endif
+#ifdef MPK_REQUEST_MAX_LENGTHS
+  expected_num_meta += 1;
+#endif
   assert(meta_tensors.size() == expected_num_meta);
   global_runtime_config.step = static_cast<int *>(meta_tensors[0]);
   global_runtime_config.tokens = static_cast<long long *>(meta_tensors[1]);
@@ -1754,6 +1762,16 @@ extern "C" void
 #ifdef MPK_KV_EVENT_LOG
   global_runtime_config.kv_event_log =
       static_cast<int *>(meta_tensors[meta_tensors.size() - 1]);
+#endif
+#ifdef MPK_REQUEST_MAX_LENGTHS
+  // Passed right before kv_event_log when both are present.
+#ifdef MPK_KV_EVENT_LOG
+  global_runtime_config.request_max_lengths =
+      static_cast<int *>(meta_tensors[meta_tensors.size() - 2]);
+#else
+  global_runtime_config.request_max_lengths =
+      static_cast<int *>(meta_tensors[meta_tensors.size() - 1]);
+#endif
 #endif
   global_runtime_config.num_workers = num_workers;
   global_runtime_config.num_local_schedulers = num_local_schedulers;

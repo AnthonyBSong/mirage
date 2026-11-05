@@ -962,6 +962,10 @@ __device__ __forceinline__ void persistent_checker(RuntimeConfig config) {
   // assert(blockDim.x >= 128);
 }
 
+#if defined(MPK_TASK_ID_LOG) &&                                                \
+    (!defined(TB_PROFILER_MAX_ENTRIES) || TB_PROFILER_MAX_ENTRIES > MPK_TASK_ID_LOG)
+#error "MPK_TASK_ID_LOG=N needs TB_PROFILER_MAX_ENTRIES <= N (ids go in slots N..2N)"
+#endif
 #if defined(MPK_ENABLE_PROFILING) && defined(MPK_PROFILER_SCHED_SLOTS)
 // Profiler tracks: workers first, then scheduler blocks.
 __device__ __forceinline__ int
@@ -1141,6 +1145,13 @@ __device__ __forceinline__ void execute_worker(RuntimeConfig config) {
 
 #ifdef MPK_ENABLE_PROFILING
     if (task_desc->task_type != TASK_TERMINATE) {
+#ifdef MPK_TASK_ID_LOG
+      // Task id (with its iteration number) of this begin entry, stored
+      // MPK_TASK_ID_LOG slots after it, so entries join to the task graph.
+      if (profiler_write_thread_predicate && TB_PROFILER_HAS_ROOM) {
+        profiler_write_ptr[MPK_TASK_ID_LOG] = task_ids[queue_pos];
+      }
+#endif
       PROFILER_EVENT_START(task_desc->task_type, task_counter);
     }
 #endif

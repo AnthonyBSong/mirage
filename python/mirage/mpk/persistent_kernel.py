@@ -343,6 +343,7 @@ def get_compile_command(
         flags = flags + [
             f"-DMPK_KV_EVENT_LOG={mpk.meta_tensors['kv_event_log'].numel()}"]
     flags = flags + [f"-DMPK_MAX_SEQ_LENGTH={mpk.max_seq_length}"]
+    flags = flags + list(getattr(mpk, "extra_compile_flags", []))
 
     if _spec_decode_enabled(mpk):
         flags = flags + ["-DMPK_SPEC_DECODE"]
@@ -504,6 +505,8 @@ class PersistentKernel:
         # generated persistent-kernel code (attach_input stores raw pointers).
         self._torch_tensor_refs = []
         self.meta_tensors = meta_tensors
+        # Extra nvcc flags (e.g. optional -D instrumentation switches); empty by default.
+        self.extra_compile_flags = []
         # Backward compat: remap old-style paged_kv_* keys to per-group _0 keys
         for _old, _new in [
             ("paged_kv_indptr_buffer",       "paged_kv_indptr_buffer_0"),
